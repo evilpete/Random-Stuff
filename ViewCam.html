@@ -1,0 +1,382 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<!--
+* ViewCam.html
+* Copyright 2013, Peter Shipley
+* Licensed under the BSD license
+*
+****************
+* Works as a standalone Viewer ( just edit the camlist_default )
+*
+* or load a webcam list from "camlist.js" 
+*
+* or reads the camlist from an ISY device ( if copied onto a ISY  )
+-->
+
+<HTML>
+<HEAD>
+# http://stackoverflow.com/questions/14704796/image-reload-causes-flicker-only-in-firefox
+<meta charset="UTF-8" />
+<TITLE>Cam All</TITLE>
+
+<style type="text/css">
+<!--
+.report { left: 0px; bottom: 0px; position: fixed; }
+
+td {
+    border: none;
+    padding:0px 0px 0px 0px;
+    vertical-align: middle;
+    margin: 0px;
+	/* align: left; */
+}
+img {
+    border: none;
+    padding:0px 0px 0px 0px;
+    margin: 0px;
+}
+tr {
+    border: none;
+    padding:0px 0px 0px 0px;
+    margin: 0px;
+}
+table {
+    border: none;
+    border-spacing: 0px;
+    padding:0px 0px 0px 0px;
+    margin: 0px;
+}
+
+-->
+</style>
+</HEAD>
+
+<BODY TEXT="#FFFFFF" BGCOLOR="#000000" VLINK="#9999CC" LINK="#9999CC" OnLoad=do_init()>
+<SCRIPT LANGUAGE="Javascript" type="text/javascript" src="camlist2.js"></SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+
+var show_report = 0;
+var delay = 2 * 1000;
+var timerID = null;
+var lasttime = new Date().getTime();
+var fpm_info = ""
+var ImageResolution = "320x240";
+var livei = 0
+var DisplayWidth = "320";var DisplayHeight = "240";
+var DisplayWsm = "320";var DisplayHsm = "240";
+var baseHeight = 100; var baseWidth = 100;
+// var ImageResolution = "160x120";var DisplayWidth = "160";var DisplayHeight = "120";
+
+camsrc = ""
+var camlist;
+var camlist_default = new Array(
+	"http://10.1.1.44/axis-cgi/jpg/image.cgi?resolution=640x480&compression=10",
+	"http://10.1.1.43/axis-cgi/jpg/image.cgi?resolution=640x480&compression=50",
+	"http://10.1.1.48/axis-cgi/jpg/image.cgi?resolution=640x480&compression=50",
+	"http://10.1.1.49/snapshot.cgi?user=guest&pwd=tseug"
+    )
+// http://10.1.1.49/Jpeg/CamImg.jpg"
+
+var skip=new Array(0)
+
+function makeList()//takes an object of objects and makes an array list from it
+{//assumes the key of the sub objects is it's id and copies it in for easir access
+    var list = new Array();
+    var c = 0;
+    for (var object in this)
+    {
+        if(typeof(this[object]) == 'object')//make sure item is object
+        {
+            //console.log(object, this[object].name, typeof(this[object]), this[object]);
+            list[c] = this[object];
+            list[c].id = object;//copy id into object for easy access
+        }
+        c++;
+    }
+    return list;
+}
+
+
+document.onkeyup = KeyCheck;
+
+function KeyCheck(e) {
+    var KeyID = (window.event) ? event.keyCode : e.keyCode;
+
+    // var character = String.fromCharCode(code);
+
+    adj = 500;
+
+    if ( delay >= 8000 ) { 
+	adj = 1000;
+    } else if ( delay < 4000 ) {
+	adj = 250;
+    }
+
+
+    // alert( "KeyID " + KeyID);
+
+    switch(KeyID)  {
+
+	case 107:  //  	NumPad +
+	case 38:  //  	PS3 up
+	    delay = delay + adj;
+// console.log( "delay = " + delay + " + " + adj );
+	    break;
+	case 109: // 	NumPad -
+	case 40: // 	PS3 down
+	    delay = delay - adj;
+// console.log( "delay = " + delay + " - " + adj );
+	    break;
+	case 82: // 	R
+	case 114: // 	r
+	    if (show_report) {	// javascript lacks xor for ' ~= 1 '
+		show_report = 0;
+		report_obj.style.display = "none";
+	    } else {
+		show_report = 1;
+		report_obj.style.display = "";
+		do_report()
+	    }
+	    break;
+	case 80: // 	P
+	case 112: // 	p
+	    ppow(window.location, "All Cams")
+	    break;
+    }
+
+    if ( delay < 250 ) {
+	delay = 250;
+    }
+
+}
+
+
+
+function  do_next(g,t) {
+
+    var theDate = new Date();
+    var dummy =  "&dummy=" + theDate.getTime().toString(10);
+    var n = "img_" + g;
+
+    /*
+    if ( t == 0 ) skip[g] = 0;
+
+    if ( skip[g] > 3 ) {
+	// document[n].style.visibility="hidden";
+	document[n].style.opacity=0.4;
+	// document[n].src = "http://10.1.1.60/lo/x.png";
+        // alert("skipping : " + g + " : n = " + n);
+	g++;
+	g = g % 4;
+	n = "img_" + g;
+    }
+    */
+
+    if ( g ) {
+	document[n].src = camlist[g] + dummy; 
+	document[n].width = DisplayWsm;
+	document[n].height = DisplayHsm;
+	document[n].style.opacity=1;
+    }
+
+
+    // extra refresh for main win/img 0
+    document["img_0"].src = camlist[0] + dummy; 
+    document["img_0"].width = DisplayWidth
+    document["img_0"].height = DisplayHeight;
+    document["img_0"].style.opacity=1;
+
+    g++;
+    g = g % camlist.length;
+
+    if ( t ) {
+	timerID = setTimeout("do_next(" + g + ",1)", delay);
+	// console.log("timerID = " + timerID);
+    }
+
+    livei++;
+    if ( g == 0 ) {
+	var s = theDate.getTime();
+	var cycle = Math.round((s - lasttime) / 1000);
+	fpm_info = "FPM = " + Math.round( 600 / cycle ) / 10
+		+ " : Delay = " + (delay/1000) + "/f"
+		+ " : Cycle = " + cycle + ":" + livei ;
+	lasttime = s;
+        livei = 0;
+	if (show_report) {
+	    do_report()
+	}
+    }
+
+    return 1;
+}
+
+function do_report() {
+    if ( ! report_obj ) {
+	report_obj = document.getElementById("report")
+    }
+    d = window.document.getElementById('td_0')
+    // alert("DisplayWidth d" + d.clientHeight )
+    // DisplayHeight = d.clientHeight / 2
+    // alert("DisplayWidth " + DisplayWidth )
+
+    skips = "skip"
+    for (var i=0;i<skip.length;i++) {
+	skips += ":" + skip[i]
+    }
+
+    report_obj.innerHTML=  "img_0=" + DisplayWidth + "x"+ + DisplayHeight +
+	" : Dsm=" + DisplayWsm + "x"+ + DisplayHsm +
+	" : td_0=" + d.clientWidth  + "x"+ + d.clientHeight +
+	" : inner=" + window.parent.innerWidth + "x"+ + window.parent.innerHeight +
+	" : base=" + baseWidth + "x"+ + baseHeight +
+	" : win=" + window.innerWidth + "x"+ + window.innerHeight +
+	" : top=" + top.innerWidth + "x"+ + top.innerHeight +
+	// " : self=" + self.innerWidth + "x"+ + self.innerHeight +
+	" : out =" + window.outerWidth + "x"+ + window.outerHeight +
+	"<br>" + fpm_info + " - " + skips + " -  src:" + camsrc
+	" ... " 
+	// " : win2 =" + window.width + "x"+ + self.height   +
+	// " : scroll =" + window.scrollWidth + "x"+ + self.scrollHeight   +
+}
+
+function do_hw() {
+    DisplayWidth = "320"
+    DisplayHeight = "240";
+
+    dv = camlist.length - 1
+    newHeight = window.parent.innerHeight /*  - 40 */
+    baseHeight=newHeight
+
+    DisplayHsm = parseInt(newHeight / dv) 
+    m = DisplayHsm / 240
+    DisplayWsm = parseInt(DisplayWidth * m)
+
+    // d = window.document.getElementById('td_a')
+    // alert("DisplayHeight d" + window.parent.innerHeight )
+
+    baseWidth = window.parent.innerWidth - 40
+    newWidth = baseWidth - DisplayWsm
+    m = newWidth / 320
+    DisplayHeight = parseInt(DisplayHeight * m)
+    DisplayWidth = parseInt(newWidth)
+    // alert("Display=" + DisplayHeight + "x" + DisplayWidth + " : " + DisplayHsm + "x" + DisplayWsm)
+   window.onresize=do_hw;
+
+    document["img_0"].width = DisplayWidth
+    document["img_0"].height = DisplayHeight;
+    skip[0] = 0
+
+    for (var i=1;i<camlist.length;i++) {
+	skip[i] = 0
+	n = "img_" + i;
+
+	document[n].width = DisplayWsm
+	document[n].height = DisplayHsm
+    }
+    
+    if (show_report) {
+	do_report()
+    }
+
+}
+
+function swap_img(a, b) {
+    Ti = camlist[a]  
+    camlist[a] = camlist[b] 
+    camlist[b] = Ti
+    do_next(b,0)
+    do_next(a,0)
+}
+
+function do_init() {
+
+    get_camlist()
+
+    newhtml = ""
+    for (var i=1;i<camlist.length;i++) {
+      newhtml += '<IMG SRC="x.png" NAME="img_' + i +'" onclick=swap_img(' + i + ',0) onError=do_err(' + i + ') onAbort=do_err(' + i + ")>\n"
+    }
+    document.getElementById("td_1").innerHTML=  newhtml
+
+    report_obj = document.getElementById("report")
+    if (show_report) {
+	report_obj.style.display = "";
+    } else {
+	report_obj.style.display = "none";
+    }
+
+    do_hw()
+    do_all()
+}
+
+function do_all() {
+
+    for (var i=0;i<camlist.length;i++) {
+	do_next(i,1)
+    }
+    return 0;
+}
+
+function do_err(g) {
+    skip[g]++;
+    // alert("img_" + g + " : skip = " + skip[g] );
+    return 1;
+}
+
+function get_camlist() {
+    if (typeof(camlist_alt) != "undefined") {
+	camsrc = "camlist_alt"
+	camlist = camlist_alt
+    } else if (typeof(camTypes) != "undefined") {
+	// console.log("camType defined")
+	var req = new XMLHttpRequest();
+	req.open('GET', '/web/conf/cams.jsn', false); 
+	req.send(null);
+	if ( req.status  == "200" ) {
+	    // console.log("using cams.jsn")
+	    camsrc = "cams.json"
+	    jdata = JSON.parse(req.responseText);
+	    ccamlist=new Array()
+	    for (prop in jdata) {
+	     if ( prop == "lastId" ) continue;
+	     var cam_model = camTypes[jdata[prop].brand].models[jdata[prop].model]
+	     var ip = jdata[prop].ip;
+	     camUrl = "http://";
+	     camUrl += ip + cam_model.snapshot;
+	     camUrl = camUrl.replace(/<user>/g,jdata[prop].user);
+	     camUrl = camUrl.replace(/<pass>/g,jdata[prop].pass);
+	     if(camUrl.indexOf('?') === -1) {
+		camUrl += '?'
+	     }
+	     ccamlist.push(camUrl)
+	     }
+	     camlist = ccamlist
+	}
+    } else if ( ! camlist ) {
+	camsrc = "camlist_default"
+	camlist=camlist_default
+    }
+}
+
+function ppow(u, n ){
+    window.open(u, n,
+	'location=no,directories=no,scrollbars=0,status=no,titlebar=no,menubar=no,toolbar=no,resizable=yes',
+	    false);
+    return true;
+}
+</script>
+<SCRIPT LANGUAGE="Javascript" type="text/javascript" src="/web/camTypes.js"></SCRIPT>
+
+	<TABLE NAME="tb_0" ID="tb_z" ALIGN=CENTER >
+	 <TR ID="td_0" NAME="td_0">
+	    <TD   ROWSPAN=3 NAME="td_0" ID="td_0" ALIGN=RIGHT>
+		<IMG SRC="x.png" NAME="img_0">
+	    </TD>
+	    <TD ID="td_1" NAME="td_1">
+		<IMG SRC="x.png" NAME="img_1">
+	    </TD>
+	 </TR>
+	 </TABLE>
+	<div class=report ID=report NAME=report>--Report--</div>
+</BODY>
+</HTML>
