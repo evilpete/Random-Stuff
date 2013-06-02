@@ -1,4 +1,7 @@
 <!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<HTML>
+<HEAD>
+<meta charset="UTF-8" />
 <!--
 * ViewCam.html
 * Copyright 2013, Peter Shipley
@@ -19,14 +22,28 @@
 	updates the table fields based on number of cam in list
 	calls do_hw() to resize tables and images
 	calls do_all()
+	set setInterval to call do_update()
 
+    do_hw():
+	does the math for window layout
+
+    get_camlist:
+	creates camlist
+	first it checks if camlist.js was sucessfuly loaded
+	tries to load cams.jsm ( conf file from an ISY )
+	last it uses the hardcoded camlist_default
+   
     do_all():
-	loads and refresh each image with calls to do_next()
-	do_next also set a sets timeout to refresh each image
+	loads and refresh each image with calls to do_cam()
+	do_cam also set a sets timeout to refresh each image
 
-    do_next():
+    do_update()
+	calls do_cam, updating one cam per interval
+
+    do_cam(cam#, z):
 	on each call the main image is refreshed
 	sub images are refreshed on a round-robin fashion
+	if arg z is true, update main cam also
 
     if a sub-image clicked on, it is swapped with the main image
 
@@ -39,12 +56,7 @@
 
 -->
 
-<HTML>
-<HEAD>
-<!--- http://stackoverflow.com/questions/14704796/image-reload-causes-flicker-only-in-firefox --->
-<meta charset="UTF-8" />
-<TITLE>Cam All</TITLE>
-
+<TITLE>ViewCam</TITLE>
 <style type="text/css">
 <!--
 .report { left: 0px; bottom: 0px; position: fixed; }
@@ -78,28 +90,26 @@ table {
 </HEAD>
 
 <BODY TEXT="#FFFFFF" BGCOLOR="#000000" VLINK="#9999CC" LINK="#9999CC" OnLoad=do_init()>
-<SCRIPT LANGUAGE="Javascript" type="text/javascript" src="camlist.js"></SCRIPT>
+<SCRIPT LANGUAGE="Javascript" type="text/javascript" src="camlistalt.js"></SCRIPT>
 <SCRIPT LANGUAGE="JavaScript">
 
 var show_report = 0;
-var delay = 2 * 1000;
+var camdelay = 10 * 1000;
 var timerID = null;
 var lasttime = new Date().getTime();
 var fpm_info = ""
-var ImageResolution = "320x240";
 var livei = 0
 var DisplayWidth = "320";var DisplayHeight = "240";
 var DisplayWsm = "320";var DisplayHsm = "240";
 var baseHeight = 100; var baseWidth = 100;
-// var ImageResolution = "160x120";var DisplayWidth = "160";var DisplayHeight = "120";
 
 camsrc = ""
 var camlist;
 var camlist_default = new Array(
-	"http://10.1.1.44/axis-cgi/jpg/image.cgi?resolution=640x480&compression=10",
-	"http://10.1.1.43/axis-cgi/jpg/image.cgi?resolution=640x480&compression=50",
-	"http://10.1.1.48/axis-cgi/jpg/image.cgi?resolution=640x480&compression=50",
-	"http://10.1.1.49/snapshot.cgi?user=guest&pwd=tseug"
+	"http://scienceview.berkeley.edu/view/images/newview.jpg?",
+	"http://173.167.125.153:84/axis-cgi/jpg/image.cgi?resolution=640x480&compression=10",
+	"http://static.cbslocal.com/cbs/kpix/webcams/smateo.jpg?",
+	"http://traffic.kron.com/TrafficCams/cam1_2.jpg?"
     )
 // http://10.1.1.49/Jpeg/CamImg.jpg"
 
@@ -132,9 +142,9 @@ function KeyCheck(e) {
 
     adj = 500;
 
-    if ( delay >= 8000 ) { 
+    if ( camdelay >= 8000 ) { 
 	adj = 1000;
-    } else if ( delay < 4000 ) {
+    } else if ( camdelay < 4000 ) {
 	adj = 250;
     }
 
@@ -145,13 +155,13 @@ function KeyCheck(e) {
 
 	case 107:  //  	NumPad +
 	case 38:  //  	PS3 up
-	    delay = delay + adj;
-// console.log( "delay = " + delay + " + " + adj );
+	    camdelay = camdelay + adj;
+// console.log( "camdelay = " + camdelay + " + " + adj );
 	    break;
 	case 109: // 	NumPad -
 	case 40: // 	PS3 down
-	    delay = delay - adj;
-// console.log( "delay = " + delay + " - " + adj );
+	    camdelay = camdelay - adj;
+// console.log( "camdelay = " + camdelay + " - " + adj );
 	    break;
 	case 82: // 	R
 	case 114: // 	r
@@ -164,42 +174,64 @@ function KeyCheck(e) {
 		do_report()
 	    }
 	    break;
+	case 32: // 	[space]
+	    if  ( timerID ) {
+		window.clearInterval(timerID)
+		document.title = "Paused"
+		timerID = 0
+	    } else {
+		do_all()
+		timerID = setInterval("do_update()", camdelay);
+		document.title = "ViewCam"
+	    }
+	    break;
+
 	case 80: // 	P
 	case 112: // 	p
 	    ppow(window.location, "All Cams")
 	    break;
     }
 
-    if ( delay < 250 ) {
-	delay = 250;
+    if ( camdelay < 250 ) {
+	camdelay = 250;
     }
 
 }
 
 
+var camnum = 1
 
-function  do_next(g,t) {
+function  do_update() {
+    camnum++
+    camnum = camnum % camlist.length;
+    do_cam(camnum,1)
+}
+
+function  do_cam(c,z) {
 
     var theDate = new Date();
     var dummy =  "&dummy=" + theDate.getTime().toString(10);
-    var n = "img_" + g;
+    var n = "img_" + c;
+
+    console.log("do_cam ( " + c + ", " + z + " )")
 
     /*
-    if ( t == 0 ) skip[g] = 0;
+    if ( t == 0 ) skip[g] = c;
 
-    if ( skip[g] > 3 ) {
+    if ( skip[c] > 3 ) {
 	// document[n].style.visibility="hidden";
 	document[n].style.opacity=0.4;
 	// document[n].src = "http://10.1.1.60/lo/x.png";
-        // alert("skipping : " + g + " : n = " + n);
-	g++;
-	g = g % 4;
-	n = "img_" + g;
+        // alert("skipping : " + c + " : n = " + n);
+	c++;
+	c = c % 4;
+	n = "img_" + c;
     }
     */
 
-    if ( g ) {
-	document[n].src = camlist[g] + dummy; 
+    // update subimages one at a time
+    if ( c ) {
+	document[n].src = camlist[c] + dummy; 
 	document[n].width = DisplayWsm;
 	document[n].height = DisplayHsm;
 	document[n].style.opacity=1;
@@ -207,25 +239,22 @@ function  do_next(g,t) {
 
 
     // extra refresh for main win/img 0
-    document["img_0"].src = camlist[0] + dummy; 
-    document["img_0"].width = DisplayWidth
-    document["img_0"].height = DisplayHeight;
-    document["img_0"].style.opacity=1;
-
-    g++;
-    g = g % camlist.length;
-
-    if ( t ) {
-	timerID = setTimeout("do_next(" + g + ",1)", delay);
-	// console.log("timerID = " + timerID);
+    if ( z || c == 0 ) {
+	document["img_0"].src = camlist[0] + dummy; 
+	document["img_0"].width = DisplayWidth
+	document["img_0"].height = DisplayHeight;
+	document["img_0"].style.opacity=1;
     }
 
+
     livei++;
-    if ( g == 0 ) {
+
+    // if we are on cam 0 do data collecting
+    if ( c == 0 ) {
 	var s = theDate.getTime();
 	var cycle = Math.round((s - lasttime) / 1000);
 	fpm_info = "FPM = " + Math.round( 600 / cycle ) / 10
-		+ " : Delay = " + (delay/1000) + "/f"
+		+ " : Delay = " + (camdelay/1000) + "/f"
 		+ " : Cycle = " + cycle + ":" + livei ;
 	lasttime = s;
         livei = 0;
@@ -260,34 +289,45 @@ function do_report() {
 	" : top=" + top.innerWidth + "x"+ + top.innerHeight +
 	// " : self=" + self.innerWidth + "x"+ + self.innerHeight +
 	" : out =" + window.outerWidth + "x"+ + window.outerHeight +
-	"<br>" + fpm_info + " - " + skips + " -  src:" + camsrc
+	"<br>" + fpm_info + " - " + skips + " -  src:" + camsrc +
+	" : timerID=" + timerID +
+
 	" ... " 
 	// " : win2 =" + window.width + "x"+ + self.height   +
 	// " : scroll =" + window.scrollWidth + "x"+ + self.scrollHeight   +
 }
 
 function do_hw() {
-    DisplayWidth = "320"
-    DisplayHeight = "240";
+    // used just for calculating wih the correct ratio
+    RefWidth = "320"
+    RefHeight = "240";
 
     dv = camlist.length - 1
     newHeight = window.parent.innerHeight /*  - 40 */
     baseHeight=newHeight
-
-    DisplayHsm = parseInt(newHeight / dv) 
-    m = DisplayHsm / 240
-    DisplayWsm = parseInt(DisplayWidth * m)
-
-    // d = window.document.getElementById('td_a')
-    // alert("DisplayHeight d" + window.parent.innerHeight )
-
     baseWidth = window.parent.innerWidth - 40
+
+    // calc subWin Height & Width
+    DisplayHsm = parseInt(newHeight / dv) 
+    m = DisplayHsm / RefHeight
+    DisplayWsm = parseInt(RefWidth * m)
+
+
+    // calc main win Height & Width
     newWidth = baseWidth - DisplayWsm
-    m = newWidth / 320
-    DisplayHeight = parseInt(DisplayHeight * m)
+    m = newWidth / RefWidth
+    DisplayHeight = parseInt(RefHeight * m)
     DisplayWidth = parseInt(newWidth)
+
+    if ( DisplayHeight > newHeight ) {
+	DisplayHeight = newHeight
+	m = newHeight / RefHeight
+	DisplayWidth = parseInt(RefWidth * m)
+    }
+
+
     // alert("Display=" + DisplayHeight + "x" + DisplayWidth + " : " + DisplayHsm + "x" + DisplayWsm)
-   window.onresize=do_hw;
+
 
     document["img_0"].width = DisplayWidth
     document["img_0"].height = DisplayHeight;
@@ -311,8 +351,7 @@ function swap_img(a, b) {
     Ti = camlist[a]  
     camlist[a] = camlist[b] 
     camlist[b] = Ti
-    do_next(b,0)
-    do_next(a,0)
+    do_cam(a, 1)
 }
 
 function do_init() {
@@ -321,7 +360,7 @@ function do_init() {
 
     newhtml = ""
     for (var i=1;i<camlist.length;i++) {
-      newhtml += '<IMG SRC="x.png" NAME="img_' + i +'" onclick=swap_img(' + i + ',0) onError=do_err(' + i + ') onAbort=do_err(' + i + ")>\n"
+      newhtml += '<IMG SRC="x.png" NAME="img_' + i +'" onclick=swap_img(' + i + ',0) onError=do_err(' + i + ') onAbort=do_err(' + i + ")>\n<BR>\n"
     }
     document.getElementById("td_1").innerHTML=  newhtml
 
@@ -334,12 +373,14 @@ function do_init() {
 
     do_hw()
     do_all()
+    timerID = setInterval("do_update()", camdelay);
+    window.onresize=do_hw;
 }
 
 function do_all() {
 
     for (var i=0;i<camlist.length;i++) {
-	do_next(i,1)
+	do_cam(i,0)
     }
     return 0;
 }
@@ -354,6 +395,7 @@ function get_camlist() {
     if (typeof(camlist_alt) != "undefined") {
 	camsrc = "camlist_alt"
 	camlist = camlist_alt
+	camdelay = camdelay_alt
     } else if (typeof(camTypes) != "undefined") {
 	// console.log("camType defined")
 	var req = new XMLHttpRequest();
@@ -393,17 +435,16 @@ function ppow(u, n ){
 }
 </script>
 <SCRIPT LANGUAGE="Javascript" type="text/javascript" src="/web/camTypes.js"></SCRIPT>
-
-	<TABLE NAME="tb_0" ID="tb_z" ALIGN=CENTER >
-	 <TR ID="td_0" NAME="td_0">
-	    <TD   ROWSPAN=3 NAME="td_0" ID="td_0" ALIGN=RIGHT>
-		<IMG SRC="x.png" NAME="img_0">
-	    </TD>
-	    <TD ID="td_1" NAME="td_1">
-		<IMG SRC="x.png" NAME="img_1">
-	    </TD>
-	 </TR>
-	 </TABLE>
-	<div class=report ID=report NAME=report>--Report--</div>
+<TABLE NAME="tb_0" ID="tb_z" ALIGN=CENTER >
+ <TR ID="td_0" NAME="td_0">
+    <TD   ROWSPAN=3 NAME="td_0" ID="td_0" ALIGN=RIGHT>
+	<IMG SRC="x.png" NAME="img_0">
+    </TD>
+    <TD ID="td_1" NAME="td_1">
+	<IMG SRC="x.png" NAME="img_1">
+    </TD>
+ </TR>
+ </TABLE>
+<div class=report ID=report NAME=report>--Report--</div>
 </BODY>
 </HTML>
