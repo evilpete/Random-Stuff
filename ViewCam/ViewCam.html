@@ -1,0 +1,450 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN" "http://www.w3.org/TR/html4/loose.dtd">
+<HTML>
+<HEAD>
+<meta charset="UTF-8" />
+<!--
+* ViewCam.html
+* Copyright 2013, Peter Shipley
+* Licensed under the BSD license
+*
+****************
+* Works as a standalone Viewer ( just edit the camlist_default )
+*
+* or load a webcam list from "camlist.js" 
+*
+* or reads the camlist from an ISY device ( if copied onto a ISY  )
+***********
+
+    on load function do_init() is called
+
+    do_init():
+	calls  get_camlist() to populate the array camlist
+	updates the table fields based on number of cam in list
+	calls do_hw() to resize tables and images
+	calls do_all()
+	set setInterval to call do_update()
+
+    do_hw():
+	does the math for window layout
+
+    get_camlist:
+	creates camlist
+	first it checks if camlist.js was sucessfuly loaded
+	tries to load cams.jsm ( conf file from an ISY )
+	last it uses the hardcoded camlist_default
+   
+    do_all():
+	loads and refresh each image with calls to do_cam()
+	do_cam also set a sets timeout to refresh each image
+
+    do_update()
+	calls do_cam, updating one cam per interval
+
+    do_cam(cam#, z):
+	on each call the main image is refreshed
+	sub images are refreshed on a round-robin fashion
+	if arg z is true, update main cam also
+
+    if a sub-image clicked on, it is swapped with the main image
+
+    the '+' and '=' key can be used to increase or slow refresh rate
+
+    the 'p' key will create a pop-out window 
+    If the "r" key toggles the display of debug info
+
+	
+
+-->
+
+<TITLE>ViewCam</TITLE>
+<style type="text/css">
+<!--
+.report { left: 0px; bottom: 0px; position: fixed; }
+
+td {
+    border: none;
+    padding:0px 0px 0px 0px;
+    vertical-align: middle;
+    margin: 0px;
+	/* align: left; */
+}
+img {
+    border: none;
+    padding:0px 0px 0px 0px;
+    margin: 0px;
+}
+tr {
+    border: none;
+    padding:0px 0px 0px 0px;
+    margin: 0px;
+}
+table {
+    border: none;
+    border-spacing: 0px;
+    padding:0px 0px 0px 0px;
+    margin: 0px;
+}
+
+-->
+</style>
+</HEAD>
+
+<BODY TEXT="#FFFFFF" BGCOLOR="#000000" VLINK="#9999CC" LINK="#9999CC" OnLoad=do_init()>
+<SCRIPT LANGUAGE="Javascript" type="text/javascript" src="camlistalt.js"></SCRIPT>
+<SCRIPT LANGUAGE="JavaScript">
+
+var show_report = 0;
+var camdelay = 10 * 1000;
+var timerID = null;
+var lasttime = new Date().getTime();
+var fpm_info = ""
+var livei = 0
+var DisplayWidth = "320";var DisplayHeight = "240";
+var DisplayWsm = "320";var DisplayHsm = "240";
+var baseHeight = 100; var baseWidth = 100;
+
+camsrc = ""
+var camlist;
+var camlist_default = new Array(
+	"http://scienceview.berkeley.edu/view/images/newview.jpg?",
+	"http://173.167.125.153:84/axis-cgi/jpg/image.cgi?resolution=640x480&compression=10",
+	"http://static.cbslocal.com/cbs/kpix/webcams/smateo.jpg?",
+	"http://traffic.kron.com/TrafficCams/cam1_2.jpg?"
+    )
+// http://10.1.1.49/Jpeg/CamImg.jpg"
+
+var skip=new Array(0)
+
+function makeList()//takes an object of objects and makes an array list from it
+{//assumes the key of the sub objects is it's id and copies it in for easir access
+    var list = new Array();
+    var c = 0;
+    for (var object in this)
+    {
+        if(typeof(this[object]) == 'object')//make sure item is object
+        {
+            //console.log(object, this[object].name, typeof(this[object]), this[object]);
+            list[c] = this[object];
+            list[c].id = object;//copy id into object for easy access
+        }
+        c++;
+    }
+    return list;
+}
+
+
+document.onkeyup = KeyCheck;
+
+function KeyCheck(e) {
+    var KeyID = (window.event) ? event.keyCode : e.keyCode;
+
+    // var character = String.fromCharCode(code);
+
+    adj = 500;
+
+    if ( camdelay >= 8000 ) { 
+	adj = 1000;
+    } else if ( camdelay < 4000 ) {
+	adj = 250;
+    }
+
+
+    // alert( "KeyID " + KeyID);
+
+    switch(KeyID)  {
+
+	case 107:  //  	NumPad +
+	case 38:  //  	PS3 up
+	    camdelay = camdelay + adj;
+// console.log( "camdelay = " + camdelay + " + " + adj );
+	    break;
+	case 109: // 	NumPad -
+	case 40: // 	PS3 down
+	    camdelay = camdelay - adj;
+// console.log( "camdelay = " + camdelay + " - " + adj );
+	    break;
+	case 82: // 	R
+	case 114: // 	r
+	    if (show_report) {	// javascript lacks xor for ' ~= 1 '
+		show_report = 0;
+		report_obj.style.display = "none";
+	    } else {
+		show_report = 1;
+		report_obj.style.display = "";
+		do_report()
+	    }
+	    break;
+	case 32: // 	[space]
+	    if  ( timerID ) {
+		window.clearInterval(timerID)
+		document.title = "Paused"
+		timerID = 0
+	    } else {
+		do_all()
+		timerID = setInterval("do_update()", camdelay);
+		document.title = "ViewCam"
+	    }
+	    break;
+
+	case 80: // 	P
+	case 112: // 	p
+	    ppow(window.location, "All Cams")
+	    break;
+    }
+
+    if ( camdelay < 250 ) {
+	camdelay = 250;
+    }
+
+}
+
+
+var camnum = 1
+
+function  do_update() {
+    camnum++
+    camnum = camnum % camlist.length;
+    do_cam(camnum,1)
+}
+
+function  do_cam(c,z) {
+
+    var theDate = new Date();
+    var dummy =  "&dummy=" + theDate.getTime().toString(10);
+    var n = "img_" + c;
+
+    console.log("do_cam ( " + c + ", " + z + " )")
+
+    /*
+    if ( t == 0 ) skip[g] = c;
+
+    if ( skip[c] > 3 ) {
+	// document[n].style.visibility="hidden";
+	document[n].style.opacity=0.4;
+	// document[n].src = "http://10.1.1.60/lo/x.png";
+        // alert("skipping : " + c + " : n = " + n);
+	c++;
+	c = c % 4;
+	n = "img_" + c;
+    }
+    */
+
+    // update subimages one at a time
+    if ( c ) {
+	document[n].src = camlist[c] + dummy; 
+	document[n].width = DisplayWsm;
+	document[n].height = DisplayHsm;
+	document[n].style.opacity=1;
+    }
+
+
+    // extra refresh for main win/img 0
+    if ( z || c == 0 ) {
+	document["img_0"].src = camlist[0] + dummy; 
+	document["img_0"].width = DisplayWidth
+	document["img_0"].height = DisplayHeight;
+	document["img_0"].style.opacity=1;
+    }
+
+
+    livei++;
+
+    // if we are on cam 0 do data collecting
+    if ( c == 0 ) {
+	var s = theDate.getTime();
+	var cycle = Math.round((s - lasttime) / 1000);
+	fpm_info = "FPM = " + Math.round( 600 / cycle ) / 10
+		+ " : Delay = " + (camdelay/1000) + "/f"
+		+ " : Cycle = " + cycle + ":" + livei ;
+	lasttime = s;
+        livei = 0;
+	if (show_report) {
+	    do_report()
+	}
+    }
+
+    return 1;
+}
+
+function do_report() {
+    if ( ! report_obj ) {
+	report_obj = document.getElementById("report")
+    }
+    d = window.document.getElementById('td_0')
+    // alert("DisplayWidth d" + d.clientHeight )
+    // DisplayHeight = d.clientHeight / 2
+    // alert("DisplayWidth " + DisplayWidth )
+
+    skips = "skip"
+    for (var i=0;i<skip.length;i++) {
+	skips += ":" + skip[i]
+    }
+
+    report_obj.innerHTML=  "img_0=" + DisplayWidth + "x"+ + DisplayHeight +
+	" : Dsm=" + DisplayWsm + "x"+ + DisplayHsm +
+	" : td_0=" + d.clientWidth  + "x"+ + d.clientHeight +
+	" : inner=" + window.parent.innerWidth + "x"+ + window.parent.innerHeight +
+	" : base=" + baseWidth + "x"+ + baseHeight +
+	" : win=" + window.innerWidth + "x"+ + window.innerHeight +
+	" : top=" + top.innerWidth + "x"+ + top.innerHeight +
+	// " : self=" + self.innerWidth + "x"+ + self.innerHeight +
+	" : out =" + window.outerWidth + "x"+ + window.outerHeight +
+	"<br>" + fpm_info + " - " + skips + " -  src:" + camsrc +
+	" : timerID=" + timerID +
+
+	" ... " 
+	// " : win2 =" + window.width + "x"+ + self.height   +
+	// " : scroll =" + window.scrollWidth + "x"+ + self.scrollHeight   +
+}
+
+function do_hw() {
+    // used just for calculating wih the correct ratio
+    RefWidth = "320"
+    RefHeight = "240";
+
+    dv = camlist.length - 1
+    newHeight = window.parent.innerHeight /*  - 40 */
+    baseHeight=newHeight
+    baseWidth = window.parent.innerWidth - 40
+
+    // calc subWin Height & Width
+    DisplayHsm = parseInt(newHeight / dv) 
+    m = DisplayHsm / RefHeight
+    DisplayWsm = parseInt(RefWidth * m)
+
+
+    // calc main win Height & Width
+    newWidth = baseWidth - DisplayWsm
+    m = newWidth / RefWidth
+    DisplayHeight = parseInt(RefHeight * m)
+    DisplayWidth = parseInt(newWidth)
+
+    if ( DisplayHeight > newHeight ) {
+	DisplayHeight = newHeight
+	m = newHeight / RefHeight
+	DisplayWidth = parseInt(RefWidth * m)
+    }
+
+
+    // alert("Display=" + DisplayHeight + "x" + DisplayWidth + " : " + DisplayHsm + "x" + DisplayWsm)
+
+
+    document["img_0"].width = DisplayWidth
+    document["img_0"].height = DisplayHeight;
+    skip[0] = 0
+
+    for (var i=1;i<camlist.length;i++) {
+	skip[i] = 0
+	n = "img_" + i;
+
+	document[n].width = DisplayWsm
+	document[n].height = DisplayHsm
+    }
+    
+    if (show_report) {
+	do_report()
+    }
+
+}
+
+function swap_img(a, b) {
+    Ti = camlist[a]  
+    camlist[a] = camlist[b] 
+    camlist[b] = Ti
+    do_cam(a, 1)
+}
+
+function do_init() {
+
+    get_camlist()
+
+    newhtml = ""
+    for (var i=1;i<camlist.length;i++) {
+      newhtml += '<IMG SRC="x.png" NAME="img_' + i +'" onclick=swap_img(' + i + ',0) onError=do_err(' + i + ') onAbort=do_err(' + i + ")>\n<BR>\n"
+    }
+    document.getElementById("td_1").innerHTML=  newhtml
+
+    report_obj = document.getElementById("report")
+    if (show_report) {
+	report_obj.style.display = "";
+    } else {
+	report_obj.style.display = "none";
+    }
+
+    do_hw()
+    do_all()
+    timerID = setInterval("do_update()", camdelay);
+    window.onresize=do_hw;
+}
+
+function do_all() {
+
+    for (var i=0;i<camlist.length;i++) {
+	do_cam(i,0)
+    }
+    return 0;
+}
+
+function do_err(g) {
+    skip[g]++;
+    // alert("img_" + g + " : skip = " + skip[g] );
+    return 1;
+}
+
+function get_camlist() {
+    if (typeof(camlist_alt) != "undefined") {
+	camsrc = "camlist_alt"
+	camlist = camlist_alt
+	camdelay = camdelay_alt
+    } else if (typeof(camTypes) != "undefined") {
+	// console.log("camType defined")
+	var req = new XMLHttpRequest();
+	req.open('GET', '/web/conf/cams.jsn', false); 
+	req.send(null);
+	if ( req.status  == "200" ) {
+	    // console.log("using cams.jsn")
+	    camsrc = "cams.json"
+	    jdata = JSON.parse(req.responseText);
+	    ccamlist=new Array()
+	    for (prop in jdata) {
+	     if ( prop == "lastId" ) continue;
+	     var cam_model = camTypes[jdata[prop].brand].models[jdata[prop].model]
+	     var ip = jdata[prop].ip;
+	     camUrl = "http://";
+	     camUrl += ip + cam_model.snapshot;
+	     camUrl = camUrl.replace(/<user>/g,jdata[prop].user);
+	     camUrl = camUrl.replace(/<pass>/g,jdata[prop].pass);
+	     if(camUrl.indexOf('?') === -1) {
+		camUrl += '?'
+	     }
+	     ccamlist.push(camUrl)
+	     }
+	     camlist = ccamlist
+	}
+    } else if ( ! camlist ) {
+	camsrc = "camlist_default"
+	camlist=camlist_default
+    }
+}
+
+function ppow(u, n ){
+    window.open(u, n,
+	'location=no,directories=no,scrollbars=0,status=no,titlebar=no,menubar=no,toolbar=no,resizable=yes',
+	    false);
+    return true;
+}
+</script>
+<SCRIPT LANGUAGE="Javascript" type="text/javascript" src="/web/camTypes.js"></SCRIPT>
+<TABLE NAME="tb_0" ID="tb_z" ALIGN=CENTER >
+ <TR ID="td_0" NAME="td_0">
+    <TD   ROWSPAN=3 NAME="td_0" ID="td_0" ALIGN=RIGHT>
+	<IMG SRC="x.png" NAME="img_0">
+    </TD>
+    <TD ID="td_1" NAME="td_1">
+	<IMG SRC="x.png" NAME="img_1">
+    </TD>
+ </TR>
+ </TABLE>
+<div class=report ID=report NAME=report>--Report--</div>
+</BODY>
+</HTML>
