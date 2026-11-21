@@ -1,10 +1,11 @@
 
 # Eisy scripts
 
-Random scripts / web / html files and libraries
+Random scripts for [Eisy](https://www.universal-devices.com/) home automation controllers
 
 ## eisy_zb_decode.py
 
+<img align="right" src="zigbee_mesh.png" width=300>
 
 &nbsp; &nbsp; &nbsp; A quick Python script to decode Zigbee protocol from Easy logs
 
@@ -17,5 +18,7 @@ Random scripts / web / html files and libraries
 &nbsp; &nbsp; &nbsp;  A quick Python script to decode ZWave protocol from Easy logs
 
 ## eisy_zw_graph.py
+
+<img align="right" src="zwave_mesh.png" width=300>
 
 &nbsp; &nbsp; &nbsp; Script to generate a visual graph of ZWave network
