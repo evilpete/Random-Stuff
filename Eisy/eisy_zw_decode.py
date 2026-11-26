@@ -428,12 +428,12 @@ class Decoder:
             return
         m = SECURE_RX_RE.search(line)
         if m:
-            n, ep, scheme, hx = int(m.group(1)), m.group(2), m.group(3) or "S0", m.group(4)
+            n, _ep, scheme, hx = int(m.group(1)), m.group(2), m.group(3) or "S0", m.group(4)
             cmd = [int(x, 16) for x in hx.split()]
             txt = decode_cmd(cmd, self.nodes[n])
             if self.pending and self.pending[1] == n and self.pending[3]:
                 ts, _, old, _ = self.pending
-                prefix = old.split("  ", 1)[0]
+                _prefix = old.split("  ", 1)[0]
                 tail = old[old.rfind("  ("):] if "  (" in old else ""
                 self.pending = (ts, n, f"RX  node {n:>3} [{scheme}] {txt}{tail}", False)
             else:

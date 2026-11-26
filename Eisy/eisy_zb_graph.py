@@ -30,7 +30,7 @@ report the quality of the inner hops.
 
 import argparse
 import csv
-import os
+# import os
 import re
 import shutil
 import subprocess
@@ -116,7 +116,7 @@ def main():
 
     overrides = {}
     if args.names:
-        with open(args.names, newline="") as fh:
+        with open(args.names, newline="", encoding="utf-8") as fh:
             for row in csv.reader(fh):
                 if len(row) >= 2 and row[0].strip():
                     k = row[0].strip()
@@ -232,9 +232,11 @@ def main():
         attrs = [f"penwidth={1 + 3 * c / maxc:.1f}" if c else "penwidth=1"]
         if c:
             attrs.append(f'tooltip="{c} route record(s)"')
+            attrs.append(f'weight={c}')
         if par == 0:
             r = signal_label(child)
             attrs += [f"color={rssi_color(r)}", f'label=" {r} dBm"' if r is not None else ""]
+        print(f"c={c} r={r}")
         if not c and child in direct:
             attrs.append("style=dashed")
         out.append(f'  n{par} -> n{child} [{", ".join(x for x in attrs if x)}];')
@@ -255,7 +257,7 @@ def main():
     out.append("}")
 
     dot_path = args.out + ".dot"
-    with open(dot_path, "w") as fh:
+    with open(dot_path, "w", encoding="utf-8") as fh:
         fh.write("\n".join(out) + "\n")
 
     rendered = []

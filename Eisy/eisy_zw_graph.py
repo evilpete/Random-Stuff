@@ -133,7 +133,7 @@ def main():
 
     overrides = {}
     if args.names:
-        with open(args.names, newline="") as fh:
+        with open(args.names, newline="", encoding="utf-8",) as fh:
             for row in csv.reader(fh):
                 if len(row) >= 2 and row[0].strip().isdigit():
                     overrides[int(row[0])] = row[1].strip()
@@ -150,22 +150,24 @@ def main():
     def label(n):
         if n in overrides:
             name = overrides[n]
+            # name = f"<B>{overrides[n]}</B>"
         else:
             d = info.get(n, {})
             name = " ".join(x for x in (d.get("vendorString", ""), d.get("deviceTypeString", "")) if x)
         lines = [f"Node {n}" + (" (EISY)" if n == ctl else "")]
         if name:
             import textwrap
-            lines += textwrap.wrap(name, 22)[:2]
+            lines += textwrap.wrap(name, 24)[:2]
         if n != ctl:
             bits = []
             if hops.get(n):
                 hs = sorted(hops[n])
-                bits.append(f"{hs[0]}" + (f"–{hs[-1]}" if len(hs) > 1 else "") + " hop" + ("s" if hs[-1] > 1 else ""))
+                bits.append(f"{hs[0]}" + (f"-{hs[-1]}" if len(hs) > 1 else "") + " hop" + ("s" if hs[-1] > 1 else ""))
             if rssi.get(n):
                 bits.append(f"{sum(rssi[n]) / len(rssi[n]):.0f} dBm")
             if nack.get(n):
-                bits.append(f"{nack[n]}/{tx[n]} sends failed")
+                bits.append(f"{nack[n]}/{tx[n]} failed")
+                # bits.append(f"{nack[n]}/{tx[n]} sends failed")
             if n in nbrs and not nbrs[n]:
                 bits.append("NO neighbours")
             if bits:
@@ -208,7 +210,7 @@ def node_style(n, ctl, listening, nack, nbrs):
     elif listening.get(n) is False:
         attrs = ['shape=note', 'style=filled', 'fillcolor="#fff4d6"']
     else:
-        attrs = ['shape=ellipse', 'style=filled', 'fillcolor="#dbe9f6"']
+        attrs = ['shape=box', 'style="rounded,filled"', 'fillcolor="#dbe9f6"']
     if nack.get(n) or (n in nbrs and not nbrs[n]):
         attrs += ['color=red3', 'penwidth=2']
     return attrs
@@ -271,6 +273,7 @@ def build_tree(args, ctl, nodes, paths, failed, nbrs, listening, nack, label):
     for k in ks:
         out.append(f'  {{ rank=same; row{k}; ' + " ".join(f"n{n};" for n in sorted(rows[k])) + " }")
         for n in sorted(rows[k]):
+            # attrs = [f'label=<{label(n)}>'] + node_style(n, ctl, listening, nack, nbrs)
             attrs = [f'label="{label(n)}"'] + node_style(n, ctl, listening, nack, nbrs)
             out.append(f'  n{n} [{", ".join(attrs)}];')
 
@@ -286,7 +289,9 @@ def build_tree(args, ctl, nodes, paths, failed, nbrs, listening, nack, label):
         w = f"{1 + 4 * c / maxc:.1f}"
         if level.get(b) == level.get(a, 99) + 1:
             color = "#1a4f8b" if best_parent.get(b) == a else "#7fa7d6"
-            out.append(f'  n{a} -> n{b} [color="{color}", penwidth={w}, label="{c}"];')
+            #out.append(f'  n{a} -> n{b} [color="{color}", penwidth={w}, weight={int(float(w))},  label="{c}"];')
+            # out.append(f'  n{a} -> n{b} [color="{color}", penwidth={w}, weight={c},  label="{c}"];')
+            out.append(f'  n{a} -> n{b} [color="{color}", penwidth={w}, weight=5,  label="{c}"];')
         elif args.all_hops:
             out.append(f'  n{a} -> n{b} [color=gray60, style=dotted, constraint=false, label="{c}"];')
 
@@ -297,7 +302,7 @@ def build_tree(args, ctl, nodes, paths, failed, nbrs, listening, nack, label):
         a, b = sorted(e, key=lambda x: (level.get(x, 99), x))
         if a in nodes and b in nodes:
             out.append(f'  n{a} -> n{b} [color=red3, style=dashed, constraint=false, '
-                       f'label="failed {c}×", fontcolor=red3];')
+                       f'label="failed {c}×", weight=0, fontcolor=red3];')
     out.append("}")
     return out
 
